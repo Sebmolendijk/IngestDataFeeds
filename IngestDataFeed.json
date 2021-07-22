@@ -1,0 +1,360 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "feedName": {
+            "defaultValue": "ctip-infected",
+            "type": "String",
+            "metadata": {
+                "description": "Name of the logic app."
+            }
+        },
+        "logicAppName": {
+            "defaultValue": "[concat('IngestDcuFeed-', parameters('feedName'), uniqueString(resourceGroup().id))]",
+            "type": "String",
+            "metadata": {
+                "description": "Name of the logic app."
+            }
+        },
+        "location": {
+            "defaultValue": "[resourceGroup().location]",
+            "type": "String",
+            "metadata": {
+                "description": "Location of the logic app."
+            }
+        },
+        "azureblob_Connection_Name": {
+            "defaultValue": "azureblob",
+            "type": "String",
+            "metadata": {
+                "description": "Blob Storage connection"
+            }
+        },
+        "DecompressFilesFunction": {
+            "defaultValue": "[concat('/subscriptions/', subscription().subscriptionId, '/resourceGroups/', resourceGroup().name, '/providers/Microsoft.Logic/workflows/UserEnrichment')]",
+            "type": "string",
+            "metadata": {
+                "description": "DecompressFiles Azure Function path, like subscriptions/{subscriptionId}/resourceGroups/{resourceGroup}/providers/Microsoft.Logic/workflows/{workflowName}"
+            }
+        },
+        "logAnalytics_connectionName": {
+            "type": "String",
+            "defaultValue": "azureloganalyticsdatacollector",
+            "metadata": {
+                "description": "Log analytics API connection name"
+            }
+        },
+        "logAnalytics_id": {
+            "type": "String",
+            "defaultValue": "[concat('subscriptions/', subscription().subscriptionId,  '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/', parameters('logAnalytics_connectionName'))]",
+            "metadata": {
+                "description": "Log analytics id property"
+            }
+        },
+        "logAnalytics_connectionId": {
+            "type": "String",
+            "defaultValue": "[concat('subscriptions/', subscription().subscriptionId, '/resourceGroups/', resourceGroup().name, '/providers/Microsoft.Web/connections/', parameters('logAnalytics_connectionName'))]",
+            "metadata": {
+                "description": "Log analytics connection id property"
+            }
+        }
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Web/connections",
+            "apiVersion": "2016-06-01",
+            "name": "[parameters('azureblob_Connection_Name')]",
+            "location": "[parameters('location')]",
+            "properties": {
+                "api": {
+                    "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', parameters('location'), '/managedApis/', 'azuresentinel')]"
+                },
+                "displayName": "[parameters('azureblob_Connection_Name')]"
+            }
+        },
+        {
+            "type": "Microsoft.Web/connections",
+            "apiVersion": "2016-06-01",
+            "location": "[resourceGroup().location]",
+            "name": "[parameters('logAnalytics_connectionName')]",
+            "properties": {
+                "api": {
+                    "id": "[parameters('logAnalytics_id')]"
+                },
+                "displayName": "[parameters('logAnalytics_connectionName')]",
+                "parameterValues": {}
+            }
+        },
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2016-06-01",
+            "name": "[parameters('logicAppName')]",
+            "location": "[parameters('location')]",
+            "dependsOn": [
+                "[parameters('azureblob_Connection_Name')]",
+                "[parameters('logAnalytics_connectionName')]"
+            ],
+            "properties": {
+                "state": "Disabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        },
+                        "DecompressFilesFunction": {
+                            "defaultValue": "[parameters('DecompressFilesFunction')]",
+                            "type": "string"
+                        },
+                        "feedName": {
+                            "defaultValue": "[parameters('feedName')]",
+                            "type": "string"
+                        }
+                    },
+                    "triggers": {
+                        "Recurrence": {
+                            "recurrence": {
+                                "frequency": "Minute",
+                                "interval": 1
+                            },
+                            "type": "Recurrence"
+                        }
+                    },
+                    "actions": {
+                        "Initialize_feedName": {
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "feedName",
+                                        "type": "string",
+                                        "value": "@parameters('$feedName')"
+                                    }
+                                ]
+                            },
+                            "runAfter": {},
+                            "type": "InitializeVariable"
+                        },
+                        "Compose_folder_path": {
+                            "inputs": "@base64(replace(concat('/', variables('feedName'), '/',formatDateTime(utcNow(),'yyyy/MM/dd/HH')), '/', '%2f'))",
+                            "runAfter": {
+                                "Initialize_feedName": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Compose"
+                        },
+                        "Lists_blobs": {
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azureloganalyticsdatacollector']['connectionId']"
+                                    }
+                                },
+                                "method": "get",
+                                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('sadcuaeetisalatsentinel'))}/foldersV2/@{encodeURIComponent(encodeURIComponent(outputs('Compose_folder_path')))}",
+                                "queries": {
+                                    "nextPageMarker": "",
+                                    "useFlatListing": false
+                                }
+                            },
+                            "runAfter": {
+                                "Compose_folder_path": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnection"
+                        },
+                        "Folder_exists": {
+                            "actions": {
+                                "Filter_folders": {
+                                    "inputs": {
+                                        "from": "@body('Lists_blobs')?['value']",
+                                        "where": "@equals(item()?['IsFolder'], false)"
+                                    },
+                                    "runAfter": {},
+                                    "type": "Query"
+                                },
+                                "For_each": {
+                                    "actions": {
+                                        "Get_new_blob": {
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['azureblob_1']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "get",
+                                                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('sadcuaeetisalatsentinel'))}/files/@{encodeURIComponent(encodeURIComponent(items('For_each')?['Path']))}/content",
+                                                "queries": {
+                                                    "inferContentType": true
+                                                }
+                                            },
+                                            "runAfter": {},
+                                            "type": "ApiConnection"
+                                        },
+                                        "octet-stream_to_base64": {
+                                            "inputs": "@base64(body('Get_new_blob'))",
+                                            "runAfter": {
+                                                "Get_new_blob": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "Compose"
+                                        },
+                                        "Unzip_file": {
+                                            "inputs": {
+                                                "body": {
+                                                    "content": "@outputs('octet-stream_to_base64')"
+                                                },
+                                                "function": {
+                                                    "id": "@concat([parameters('DecompressFilesFunction')], '/decompress')"
+                                                }
+                                            },
+                                            "runAfter": {
+                                                "octet-stream_to_base64": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "Function"
+                                        },
+                                        "Send_Data": {
+                                            "inputs": {
+                                                "body": "@{json(body('Unzip_file'))}",
+                                                "headers": {
+                                                    "Log-Type": "InfectedDevices"
+                                                },
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['azureloganalyticsdatacollector']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "post",
+                                                "path": "/api/logs"
+                                            },
+                                            "runAfter": {
+                                                "Unzip_file": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "ApiConnection"
+                                        },
+                                        "Copy_blob_to_uploaded_folder": {
+                                            "inputs": {
+                                                "headers": {
+                                                    "ReadFileMetadataFromServer": true
+                                                },
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['azureblob_1']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "post",
+                                                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('sadcuaeetisalatsentinel'))}/copyFile",
+                                                "queries": {
+                                                    "destination": "@{replace(items('For_each')?['Path'], items('For_each')?['Name'], concat('uploaded/', items('For_each')?['Name']))}",
+                                                    "overwrite": true,
+                                                    "queryParametersSingleEncoded": true,
+                                                    "source": "@items('For_each')?['Path']"
+                                                }
+                                            },
+                                            "runAfter": {
+                                                "Send_Data": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "ApiConnection"
+                                        },
+                                        "Delete_uploaded_blob": {
+                                            "inputs": {
+                                                "headers": {
+                                                    "SkipDeleteIfFileNotFoundOnServer": false
+                                                },
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['azureblob_1']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "delete",
+                                                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('sadcuaeetisalatsentinel'))}/files/@{encodeURIComponent(encodeURIComponent(items('For_each')?['Path']))}"
+                                            },
+                                            "runAfter": {
+                                                "Copy_blob_to_uploaded_folder": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "ApiConnection"
+                                        }
+
+                                    },
+                                    "foreach": "@body('Filter_folders')",
+                                    "runAfter": {
+                                        "Filter_folders": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Foreach"
+                                }
+                            },
+                            "else": {
+                                "actions": {
+                                    "Terminate": {
+                                        "inputs": {
+                                            "runStatus": "Cancelled"
+                                        },
+                                        "runAfter": {},
+                                        "type": "Terminate"
+                                    }
+                                }
+                            },
+                            "expression": {
+                                "and": [
+                                    {
+                                        "equals": [
+                                            "@empty(body('Lists_blobs')?['value'])",
+                                            false
+                                        ]
+                                    }
+                                ]
+                            },
+                            "runAfter": {
+                                "Lists_blobs": [
+                                    "Succeeded",
+                                    "Failed"
+                                ]
+                            },
+                            "type": "If"
+                        }
+
+
+
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "[parameters('azureblob_Connection_Name')]": {
+                                "connectionId": "[resourceId('Microsoft.Web/connections', parameters('azureblob_Connection_Name'))]",
+                                "connectionName": "[parameters('azureblob_Connection_Name')]",
+                                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', parameters('location'), '/managedApis/', 'azureblob')]"
+                            },
+                            "[parameters('logAnalytics_connectionName')]": {
+                                "connectionId": "[parameters('logAnalytics_connectionId')]",
+                                "connectionName": "[parameters('logAnalytics_connectionName')]",
+                                "id": "[parameters('logAnalytics_id')]"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ],
+    "outputs": {
+        "logicAppUrl": {
+            "type": "string",
+            "value": "[listCallbackURL(concat(resourceId('Microsoft.Logic/workflows/', parameters('logicAppName')), '/triggers/When_a_response_to_an_Azure_Sentinel_alert_is_triggered'), '2016-06-01').value]"
+        }
+    }
+}
