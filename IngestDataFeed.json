@@ -149,7 +149,7 @@
                             "inputs": {
                                 "host": {
                                     "connection": {
-                                        "name": "@parameters('$connections')['azureloganalyticsdatacollector']['connectionId']"
+                                        "name": "@parameters('$connections')['azureblob']['connectionId']"
                                     }
                                 },
                                 "method": "get",
@@ -182,7 +182,7 @@
                                             "inputs": {
                                                 "host": {
                                                     "connection": {
-                                                        "name": "@parameters('$connections')['azureblob_1']['connectionId']"
+                                                        "name": "@parameters('$connections')['azureblob']['connectionId']"
                                                     }
                                                 },
                                                 "method": "get",
@@ -209,7 +209,7 @@
                                                     "content": "@outputs('octet-stream_to_base64')"
                                                 },
                                                 "function": {
-                                                    "id": "@concat([parameters('DecompressFilesFunction')], '/decompress')"
+                                                    "id": "/subscriptions/674bca0a-b6ce-4991-9c75-82ef14b0360d/resourceGroups/Dev/providers/Microsoft.Web/sites/DecompressGzipFiles22/functions/decompress"
                                                 }
                                             },
                                             "runAfter": {
@@ -240,6 +240,7 @@
                                             },
                                             "type": "ApiConnection"
                                         },
+
                                         "Copy_blob_to_uploaded_folder": {
                                             "inputs": {
                                                 "headers": {
@@ -247,7 +248,7 @@
                                                 },
                                                 "host": {
                                                     "connection": {
-                                                        "name": "@parameters('$connections')['azureblob_1']['connectionId']"
+                                                        "name": "@parameters('$connections')['azureblob']['connectionId']"
                                                     }
                                                 },
                                                 "method": "post",
@@ -273,7 +274,7 @@
                                                 },
                                                 "host": {
                                                     "connection": {
-                                                        "name": "@parameters('$connections')['azureblob_1']['connectionId']"
+                                                        "name": "@parameters('$connections')['azureblob']['connectionId']"
                                                     }
                                                 },
                                                 "method": "delete",
@@ -335,12 +336,12 @@
                 "parameters": {
                     "$connections": {
                         "value": {
-                            "[parameters('azureblob_Connection_Name')]": {
+                            "azureblob": {
                                 "connectionId": "[resourceId('Microsoft.Web/connections', parameters('azureblob_Connection_Name'))]",
                                 "connectionName": "[parameters('azureblob_Connection_Name')]",
                                 "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', parameters('location'), '/managedApis/', 'azureblob')]"
                             },
-                            "[parameters('logAnalytics_connectionName')]": {
+                            "azureloganalyticsdatacollector": {
                                 "connectionId": "[parameters('logAnalytics_connectionId')]",
                                 "connectionName": "[parameters('logAnalytics_connectionName')]",
                                 "id": "[parameters('logAnalytics_id')]"
@@ -352,9 +353,6 @@
         }
     ],
     "outputs": {
-        "logicAppUrl": {
-            "type": "string",
-            "value": "[listCallbackURL(concat(resourceId('Microsoft.Logic/workflows/', parameters('logicAppName')), '/triggers/When_a_response_to_an_Azure_Sentinel_alert_is_triggered'), '2016-06-01').value]"
-        }
+
     }
 }

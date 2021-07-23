@@ -5,9 +5,9 @@
 # az account set -s SUBSCRIPTION_ID
 
 $location = "westeurope"
-$resourceGroupName = "sebRG"
-$storageAccountName = "decompressgzipfilessa2"
-$functionName = "DecompressGzipFiles2"
+$resourceGroupName = "DCU"
+$storageAccountName = "decompressgzipfilessa23"
+$functionName = "DecompressGzipFiles23"
 $sourceZipPath = ".\ExtractGzipFiles.zip"
 
 
